@@ -1,11 +1,11 @@
 import 'reflect-metadata';
 import 'zone.js/dist/zone-node';
-import { renderModuleFactory } from '@angular/platform-server'
-import { enableProdMode } from '@angular/core'
+import { enableProdMode } from '@angular/core';
 import * as express from 'express';
 import * as compression from 'compression';
 import { join } from 'path';
-import { readFileSync } from 'fs';
+import { provideModuleMap } from '@nguniversal/module-map-ngfactory-loader';
+import { ngExpressEngine } from '@nguniversal/express-engine';
 
 enableProdMode();
 
@@ -16,25 +16,32 @@ const app = express();
 
 app.use(compression());
 
-const template = readFileSync(join(DIST_FOLDER, 'browser', 'index.html')).toString();
-const { AppServerModuleNgFactory } = require('main.server');
+const { AppServerModuleNgFactory, LAZY_MODULE_MAP } = require('../dist/server/main.bundle');
 
-app.engine('html', (_, options, callback) => {
-  const opts = { document: template, url: options.req.url };
-
-  renderModuleFactory(AppServerModuleNgFactory, opts)
-    .then(html => callback(null, html));
-});
+app.engine('html', ngExpressEngine({
+  bootstrap: AppServerModuleNgFactory,
+  providers: [
+    provideModuleMap(LAZY_MODULE_MAP)
+  ]
+}));
 
 app.set('view engine', 'html');
-app.set('views', 'src')
+app.set('views', join(DIST_FOLDER, 'browser'));
 
-app.get('*.*', express.static(join(DIST_FOLDER, 'browser')));
-
-app.get('*', (req, res) => {
-  res.render('index', { req });
+// TODO: implement data requests securely
+app.get('/api/*', (req, res) => {
+  res.status(404).send('data requests are not supported');
 });
 
+// Server static files from /browser
+app.get('*.*', express.static(join(DIST_FOLDER, 'browser')));
+
+// All regular routes use the Universal engine
+app.get('*', (req, res) => {
+  res.render(join(DIST_FOLDER, 'browser', 'index.html'), { req });
+});
+
+// Start up the Node server
 app.listen(PORT, () => {
-  console.log(`listening on http://localhost:${PORT}!`);
+  console.log(`Node server listening on http://localhost:${PORT}`);
 });
